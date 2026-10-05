@@ -1,0 +1,12 @@
+# Build output
+dist/
+# NuGet / archives (tai lai khi can: xem README muc WebView2 SDK)
+lib/**/*.nupkg
+lib/**/*.zip
+# OS / editor
+Thumbs.db
+Desktop.ini
+.vs/
+*.user
+# Nhat ky
+*.log
