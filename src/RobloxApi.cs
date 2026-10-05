@@ -104,6 +104,144 @@ namespace RinAccountManager
             return code == "" ? null : code;
         }
 
+        // Link share moi: /share?code=XXX&type=Server (hoac /share-links?...).
+        // Chi nhan type=Server (moi join VIP kieu nay).
+        public static string ExtractShareCode(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return null;
+            }
+            int t = text.IndexOf("type=Server");
+            if (t < 0)
+            {
+                return null;
+            }
+            System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(text, "[?&]code=([0-9a-fA-F]{16,64})");
+            if (m.Success && m.Groups.Count >= 2)
+            {
+                return m.Groups[1].Value;
+            }
+            return null;
+        }
+
+        // Ma VIP tran (khong kem link): JobId la 1 chuoi ma + PlaceId co game.
+        // JobId thuong la GUID co gach ngang -> khong nham.
+        public static bool IsBareVipCode(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+            string t = text.Trim();
+            if (t.Contains(" ") || t.Contains("=") || t.Contains("/") || t.Contains("?"))
+            {
+                return false;
+            }
+            if (System.Text.RegularExpressions.Regex.IsMatch(t, "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"))
+            {
+                return false;
+            }
+            if (t.Length >= 16 && System.Text.RegularExpressions.Regex.IsMatch(t, "^[0-9A-Za-z\\-]+$"))
+            {
+                return true;
+            }
+            return false;
+        }
+
+        public class ShareResolved
+        {
+            public long PlaceId;
+            public string LinkCode;
+            public long UniverseId;
+        }
+
+        public static bool TryResolveShareLink(string cookie, string shareCode, out ShareResolved res, out string error)
+        {
+            res = null;
+            error = null;
+            string json = "{\"linkId\":\"" + shareCode + "\",\"linkType\":\"Server\"}";
+            string[] csrfHolder = new string[1];
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                try
+                {
+                    HttpWebRequest req = Create("https://apis.roblox.com/sharelinks/v1/resolve-link", cookie);
+                    req.Method = "POST";
+                    req.ContentType = "application/json";
+                    req.Accept = "application/json, text/plain, */*";
+                    req.Referer = "https://www.roblox.com/";
+                    if (csrfHolder[0] != null)
+                    {
+                        req.Headers["X-CSRF-TOKEN"] = csrfHolder[0];
+                    }
+                    byte[] bytes = Encoding.UTF8.GetBytes(json);
+                    req.ContentLength = bytes.Length;
+                    using (Stream ws = req.GetRequestStream())
+                    {
+                        ws.Write(bytes, 0, bytes.Length);
+                    }
+                    using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+                    {
+                        using (StreamReader sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+                        {
+                            string body = sr.ReadToEnd();
+                            JavaScriptSerializer ser = new JavaScriptSerializer();
+                            Dictionary<string, object> d = ser.Deserialize<Dictionary<string, object>>(body);
+                            object ps;
+                            if (d == null || !d.TryGetValue("privateServerInviteData", out ps) || !(ps is Dictionary<string, object>))
+                            {
+                                error = "Link khong phai VIP server.";
+                                return false;
+                            }
+                            Dictionary<string, object> p = (Dictionary<string, object>)ps;
+                            object st;
+                            if (!p.TryGetValue("status", out st) || Convert.ToString(st) != "Valid")
+                            {
+                                error = "Link VIP het han hoac khong hop le.";
+                                return false;
+                            }
+                            ShareResolved r = new ShareResolved();
+                            object v;
+                            if (p.TryGetValue("placeId", out v)) { r.PlaceId = Convert.ToInt64(v); }
+                            if (p.TryGetValue("linkCode", out v)) { r.LinkCode = Convert.ToString(v); }
+                            if (p.TryGetValue("universeId", out v)) { r.UniverseId = Convert.ToInt64(v); }
+                            if (r.PlaceId <= 0 || string.IsNullOrEmpty(r.LinkCode))
+                            {
+                                error = "Link VIP thieu thong tin.";
+                                return false;
+                            }
+                            res = r;
+                            return true;
+                        }
+                    }
+                }
+                catch (WebException wex)
+                {
+                    HttpWebResponse r = wex.Response as HttpWebResponse;
+                    if (r != null)
+                    {
+                        string tok = r.Headers["x-csrf-token"];
+                        try { r.Close(); } catch { }
+                        if (tok != null && attempt == 0)
+                        {
+                            csrfHolder[0] = tok;
+                            continue;
+                        }
+                    }
+                    error = "Mang loi: " + wex.Message;
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    error = ex.Message;
+                    return false;
+                }
+            }
+            error = "Khong resolve duoc link.";
+            return false;
+        }
+
         // Lay accessCode cho VIP server tu trang game (can cookie cua acc duoc moi).
         public static bool TryGetPrivateAccessCode(string cookie, long placeId, string linkCode, out string accessCode, out string error)
         {

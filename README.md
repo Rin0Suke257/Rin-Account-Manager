@@ -42,7 +42,7 @@ CANH BAO: ai xin cookie / xin "rbx-player link" thi KHONG cho. Ho co the log vao
 - Bam nut `v` canh o PlaceId de mo bang game: the game co **hinh + ten**, bam `Chon` la dien vao o Play.
 - `+ Luu game dang nhap`: luu game theo ID/link dang nhap (tu tai ten + hinh).
 - Moi game play xong tu vao muc `Gan day`.
-- **VIP server:** paste link VIP (`...?privateServerLinkCode=...`) vao o JobId (hoac PlaceId), app tu lay accessCode va join bang `RequestPrivateGame`. Game VIP luu bang the `[VIP]`, chon la dien ca link.
+- **VIP server (2 dang link):** paste link VIP vao o JobId (hoac PlaceId) — dang cu (`?privateServerLinkCode=...`) va dang moi (`/share?code=...&type=Server`). App tu resolve + lay accessCode + join `RequestPrivateGame`. Game VIP luu bang the `[VIP]`, chon la dien ca link.
 
 ## Treo acc (trong Cai dat, mac dinh TAT het)
 

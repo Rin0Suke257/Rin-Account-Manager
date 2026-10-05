@@ -89,6 +89,41 @@ namespace RinAccountManager
 
         public static string LaunchVip(Account acc, long placeId, string linkCode)
         {
+            return LaunchVipCode(acc, placeId, linkCode);
+        }
+
+        public static string LaunchFollow(Account acc, long targetUserId)
+        {
+            string csrf;
+            string csrfErr;
+            if (!RobloxApi.TryGetCsrfToken(acc.Cookie, out csrf, out csrfErr))
+            {
+                return "CSRF fail (" + acc.Username + "): " + csrfErr;
+            }
+            string ticket;
+            string ticketErr;
+            if (!RobloxApi.TryGetAuthTicket(acc.Cookie, csrf, out ticket, out ticketErr))
+            {
+                return "Ticket fail (" + acc.Username + "): " + ticketErr;
+            }
+            string placeLauncher = "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestFollowUser&userId=" + targetUserId.ToString();
+            return LaunchUrl(acc, ticket, placeLauncher);
+        }
+
+        // Link share VIP dang moi (/share?code=..&type=Server): resolve tung acc roi join.
+        public static string LaunchVipShare(Account acc, string shareCode)
+        {
+            RobloxApi.ShareResolved res;
+            string resErr;
+            if (!RobloxApi.TryResolveShareLink(acc.Cookie, shareCode, out res, out resErr))
+            {
+                return "Share fail (" + acc.Username + "): " + resErr;
+            }
+            return LaunchVipCode(acc, res.PlaceId, res.LinkCode);
+        }
+
+        private static string LaunchVipCode(Account acc, long placeId, string linkCode)
+        {
             string csrf;
             string csrfErr;
             if (!RobloxApi.TryGetCsrfToken(acc.Cookie, out csrf, out csrfErr))
@@ -109,24 +144,6 @@ namespace RinAccountManager
             }
             string placeLauncher = "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestPrivateGame&placeId=" + placeId.ToString()
                 + "&accessCode=" + access + "&linkCode=" + linkCode;
-            return LaunchUrl(acc, ticket, placeLauncher);
-        }
-
-        public static string LaunchFollow(Account acc, long targetUserId)
-        {
-            string csrf;
-            string csrfErr;
-            if (!RobloxApi.TryGetCsrfToken(acc.Cookie, out csrf, out csrfErr))
-            {
-                return "CSRF fail (" + acc.Username + "): " + csrfErr;
-            }
-            string ticket;
-            string ticketErr;
-            if (!RobloxApi.TryGetAuthTicket(acc.Cookie, csrf, out ticket, out ticketErr))
-            {
-                return "Ticket fail (" + acc.Username + "): " + ticketErr;
-            }
-            string placeLauncher = "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestFollowUser&userId=" + targetUserId.ToString();
             return LaunchUrl(acc, ticket, placeLauncher);
         }
 

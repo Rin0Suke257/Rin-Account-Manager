@@ -18,11 +18,13 @@ namespace RinAccountManager
 
         private string curPlaceText;
         private string curJobText;
+        private string resolveCookie;
 
-        public GamesForm(string placeText, string jobText)
+        public GamesForm(string placeText, string jobText, string cookie)
         {
             curPlaceText = placeText;
             curJobText = jobText;
+            resolveCookie = cookie;
             data = GamesStore.Load();
 
             this.Text = "Game - Rin";
@@ -358,8 +360,47 @@ namespace RinAccountManager
 
         private async void BtnSave_Click(object sender, EventArgs e)
         {
-            long pid;
-            if (!TryFirstNumber(curPlaceText, out pid) && !TryFirstNumber(curJobText, out pid))
+            // Share link moi: resolve ra placeId truoc (can 1 acc live).
+            string share = RobloxApi.ExtractShareCode(curJobText);
+            if (share == null)
+            {
+                share = RobloxApi.ExtractShareCode(curPlaceText);
+            }
+            long pid = 0;
+            if (share != null)
+            {
+                if (string.IsNullOrEmpty(resolveCookie))
+                {
+                    MessageBox.Show("Luu share link can it nhat 1 acc trong list.", "Rin",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                lblMsg.Text = "Dang resolve share link...";
+                string sc = share;
+                string ck = resolveCookie;
+                RobloxApi.ShareResolved res = null;
+                string rerr = null;
+                bool rok = await Task.Run(new Func<bool>(delegate()
+                {
+                    RobloxApi.ShareResolved r;
+                    string er;
+                    if (RobloxApi.TryResolveShareLink(ck, sc, out r, out er))
+                    {
+                        res = r;
+                        return true;
+                    }
+                    rerr = er;
+                    return false;
+                }));
+                if (!rok)
+                {
+                    lblMsg.Text = rerr;
+                    MessageBox.Show(rerr, "Rin", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                pid = res.PlaceId;
+            }
+            else if (!TryFirstNumber(curPlaceText, out pid) && !TryFirstNumber(curJobText, out pid))
             {
                 MessageBox.Show("O PlaceId dang trong. Nhap ID/link game truoc.", "Rin",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -370,6 +411,7 @@ namespace RinAccountManager
             {
                 vip = RobloxApi.ExtractVipCode(curPlaceText);
             }
+            bool isShareSave = share != null;
             lblMsg.Text = "Dang tai thong tin game...";
             long p = pid;
             string v = vip;
@@ -415,7 +457,17 @@ namespace RinAccountManager
             {
                 g.IsVip = true;
                 string src = curJobText;
-                if (RobloxApi.ExtractVipCode(src) == null)
+                if (RobloxApi.ExtractVipCode(src) == null && RobloxApi.ExtractShareCode(src) == null)
+                {
+                    src = curPlaceText;
+                }
+                g.VipLink = src.Trim();
+            }
+            else if (isShareSave)
+            {
+                g.IsVip = true;
+                string src = curJobText;
+                if (RobloxApi.ExtractShareCode(src) == null)
                 {
                     src = curPlaceText;
                 }

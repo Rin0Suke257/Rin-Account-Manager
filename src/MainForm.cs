@@ -36,10 +36,12 @@ namespace RinAccountManager
             public long PlaceId;
             public string JobId;
             public string VipCode;
+            public string ShareCode;
             public long FollowId;
             public int Pid;
             public int Retries;
             public DateTime LastAfk;
+            public DateTime BornAt;
         }
 
         private Dictionary<Account, Session> sessions = new Dictionary<Account, Session>();
@@ -407,11 +409,31 @@ namespace RinAccountManager
             }
         }
 
-        // Gan pid cho session qua BrowserTrackerId trong command line (giong RAM).
+        private static System.Collections.Generic.List<int> LivePids()
+        {
+            System.Collections.Generic.List<int> list = new System.Collections.Generic.List<int>();
+            System.Diagnostics.Process[] ps = System.Diagnostics.Process.GetProcessesByName("RobloxPlayerBeta");
+            for (int i = 0; i < ps.Length; i++)
+            {
+                try
+                {
+                    if (!ps[i].HasExited)
+                    {
+                        list.Add(ps[i].Id);
+                    }
+                }
+                catch { }
+                try { ps[i].Dispose(); } catch { }
+            }
+            return list;
+        }
+
+        // Gan pid cho session: 1) khop BrowserTrackerId (neu doc duoc), 2) nhan client chua ai nhan.
         private void AttachPids()
         {
             try
             {
+                // 1) WMI tracker (giong RAM, khi doc duoc)
                 List<Account> need = new List<Account>();
                 lock (sessions)
                 {
@@ -423,41 +445,89 @@ namespace RinAccountManager
                         }
                     }
                 }
-                if (need.Count == 0)
-                {
-                    return;
-                }
-                System.Management.ManagementObjectSearcher searcher = new System.Management.ManagementObjectSearcher(
-                    "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name='RobloxPlayerBeta.exe'");
-                foreach (System.Management.ManagementObject mo in searcher.Get())
+                if (need.Count > 0)
                 {
                     try
                     {
-                        int pid = Convert.ToInt32(mo["ProcessId"]);
-                        string cmd = Convert.ToString(mo["CommandLine"]);
-                        if (cmd == null)
+                        System.Management.ManagementObjectSearcher searcher = new System.Management.ManagementObjectSearcher(
+                            "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name='RobloxPlayerBeta.exe'");
+                        foreach (System.Management.ManagementObject mo in searcher.Get())
                         {
-                            continue;
-                        }
-                        System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(cmd, "\\-b\\s*(\\d+)");
-                        if (!m.Success)
-                        {
-                            continue;
-                        }
-                        string tracker = m.Groups[1].Value;
-                        lock (sessions)
-                        {
-                            foreach (Account a in need)
+                            try
                             {
-                                Session ss;
-                                if (sessions.TryGetValue(a, out ss) && !PidAlive(ss.Pid) && a.BrowserTrackerId == tracker)
+                                int pid = Convert.ToInt32(mo["ProcessId"]);
+                                string cmd = Convert.ToString(mo["CommandLine"]);
+                                if (cmd == null)
                                 {
-                                    ss.Pid = pid;
+                                    continue;
+                                }
+                                System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(cmd, "\\-b\\s*(\\d+)");
+                                if (!m.Success)
+                                {
+                                    continue;
+                                }
+                                string tracker = m.Groups[1].Value;
+                                lock (sessions)
+                                {
+                                    foreach (Account a in need)
+                                    {
+                                        Session ss;
+                                        if (sessions.TryGetValue(a, out ss) && !PidAlive(ss.Pid) && a.BrowserTrackerId == tracker)
+                                        {
+                                            ss.Pid = pid;
+                                        }
+                                    }
                                 }
                             }
+                            catch { }
                         }
                     }
                     catch { }
+                }
+                // 2) Client song ma chua ai nhan -> gan cho session doi lau nhat (chong mo trung).
+                AdoptOrphans();
+            }
+            catch { }
+        }
+
+        private void AdoptOrphans()
+        {
+            try
+            {
+                System.Collections.Generic.List<int> alive = LivePids();
+                lock (sessions)
+                {
+                    foreach (KeyValuePair<Account, Session> kv in sessions)
+                    {
+                        if (PidAlive(kv.Value.Pid))
+                        {
+                            alive.Remove(kv.Value.Pid);
+                        }
+                    }
+                    if (alive.Count == 0)
+                    {
+                        return;
+                    }
+                    // chi session chua tung co pid (vua launch) moi duoc nhan client lac:
+                    // session tung co pid roi chet thi chi duoc relaunch, khong nhan bua.
+                    List<Account> waiting = new List<Account>();
+                    foreach (KeyValuePair<Account, Session> kv in sessions)
+                    {
+                        if (kv.Value.Pid == 0)
+                        {
+                            waiting.Add(kv.Key);
+                        }
+                    }
+                    waiting.Sort(delegate(Account x, Account y)
+                    {
+                        return sessions[x].BornAt.CompareTo(sessions[y].BornAt);
+                    });
+                    int n = alive.Count < waiting.Count ? alive.Count : waiting.Count;
+                    for (int i = 0; i < n; i++)
+                    {
+                        sessions[waiting[i]].Pid = alive[i];
+                        Log("Nhan client " + alive[i].ToString() + " cho " + waiting[i].Alias + ".");
+                    }
                 }
             }
             catch { }
@@ -485,7 +555,8 @@ namespace RinAccountManager
                     }
                 }
             }
-            // Acc chua tung gan duoc pid (client mo cham) thi cho, khong tinh la rot.
+            // Acc chua tung gan duoc pid (client mo cham) thi cho 180s, khong tinh la rot.
+            // Tran: client dang load van song nhung chua nhan pid.
             List<Account> ready = new List<Account>();
             for (int i = 0; i < dead.Count; i++)
             {
@@ -497,13 +568,38 @@ namespace RinAccountManager
                         continue;
                     }
                 }
-                if (ss.Pid != 0 || (DateTime.Now - lastRelogin).TotalSeconds > 120)
+                if ((DateTime.Now - ss.BornAt).TotalSeconds > 180)
                 {
                     ready.Add(dead[i]);
                 }
             }
             if (ready.Count == 0)
             {
+                return;
+            }
+            // Tran cung: so client dang chay khong duoc vuot so acc theo doi.
+            // Neu thua client lac (chua nhan) thi nhan not mo moi.
+            AdoptOrphans();
+            bool stillReady = false;
+            lock (sessions)
+            {
+                foreach (Account a in ready)
+                {
+                    Session ss;
+                    if (sessions.TryGetValue(a, out ss) && !PidAlive(ss.Pid))
+                    {
+                        stillReady = true;
+                        break;
+                    }
+                }
+            }
+            if (!stillReady)
+            {
+                return;
+            }
+            if (LivePids().Count >= sessions.Count)
+            {
+                Log("Tam dung tu vao lai: client dang chay du so acc.");
                 return;
             }
             int gap = settings.ReloginGapSec;
@@ -528,6 +624,8 @@ namespace RinAccountManager
                     }
                 }
                 ss.Retries++;
+                ss.Pid = 0;
+                ss.BornAt = DateTime.Now;
                 lastRelogin = DateTime.Now;
                 Log("Tu vao lai (" + ss.Retries.ToString() + "/" + maxTry.ToString() + "): " + a.Alias);
                 Account na = a;
@@ -551,6 +649,10 @@ namespace RinAccountManager
                     if (ss.FollowId > 0)
                     {
                         return Launcher.LaunchFollow(a, ss.FollowId);
+                    }
+                    if (ss.ShareCode != null)
+                    {
+                        return Launcher.LaunchVipShare(a, ss.ShareCode);
                     }
                     if (ss.VipCode != null)
                     {
@@ -636,28 +738,77 @@ namespace RinAccountManager
                     try { p.Dispose(); } catch { }
                     return;
                 }
+                try { p.Dispose(); } catch { }
                 IntPtr prev = WinApi.GetForegroundWindow();
                 try { WinApi.ShowWindow(hwnd, WinApi.SW_RESTORE); } catch { }
-                try { WinApi.SetForegroundWindow(hwnd); } catch { }
-                System.Threading.Thread.Sleep(500);
+                // Ep focus qua AttachThreadInput (qua mat chan focus-steal)
                 try
                 {
-                    this.Invoke(new Action(delegate()
-                    {
-                        try { SendKeys.SendWait(" "); } catch { }
-                    }));
+                    uint cur = WinApi.GetCurrentThreadId();
+                    uint tFore;
+                    uint tTarget;
+                    WinApi.GetWindowThreadProcessId(prev, out tFore);
+                    WinApi.GetWindowThreadProcessId(hwnd, out tTarget);
+                    WinApi.AttachThreadInput(cur, tFore, true);
+                    WinApi.AttachThreadInput(cur, tTarget, true);
+                    WinApi.BringWindowToTop(hwnd);
+                    WinApi.SetForegroundWindow(hwnd);
+                    WinApi.AttachThreadInput(cur, tFore, false);
+                    WinApi.AttachThreadInput(cur, tTarget, false);
                 }
                 catch { }
+                bool focused = false;
+                for (int i = 0; i < 6; i++)
+                {
+                    System.Threading.Thread.Sleep(500);
+                    try
+                    {
+                        if (WinApi.GetForegroundWindow() == hwnd)
+                        {
+                            focused = true;
+                            break;
+                        }
+                        WinApi.SetForegroundWindow(hwnd);
+                    }
+                    catch { }
+                }
+                if (!focused)
+                {
+                    return;
+                }
+                bool wasIconic = false;
+                try { wasIconic = WinApi.IsIconic(hwnd); } catch { }
+                byte scan = 0x39;
+                try { scan = (byte)WinApi.MapVirtualKey(WinApi.VK_SPACE, WinApi.MAPVK_VK_TO_VSC); } catch { }
+                try { WinApi.keybd_event((byte)WinApi.VK_SPACE, scan, WinApi.KEYEVENTF_SCANCODE, UIntPtr.Zero); } catch { }
+                System.Threading.Thread.Sleep(120);
+                try { WinApi.keybd_event((byte)WinApi.VK_SPACE, scan, WinApi.KEYEVENTF_SCANCODE | WinApi.KEYEVENTF_KEYUP, UIntPtr.Zero); } catch { }
                 System.Threading.Thread.Sleep(800);
                 try
                 {
-                    if (prev != IntPtr.Zero)
+                    if (wasIconic)
                     {
-                        WinApi.SetForegroundWindow(prev);
+                        WinApi.ShowWindow(hwnd, WinApi.SW_MINIMIZE);
+                    }
+                    else if (prev != IntPtr.Zero)
+                    {
+                        // Ep tra focus (SetForeground thuong bi chan nguoc)
+                        try
+                        {
+                            uint cur2 = WinApi.GetCurrentThreadId();
+                            uint tPrev;
+                            WinApi.GetWindowThreadProcessId(prev, out tPrev);
+                            WinApi.AttachThreadInput(cur2, tPrev, true);
+                            WinApi.SetForegroundWindow(prev);
+                            WinApi.AttachThreadInput(cur2, tPrev, false);
+                        }
+                        catch
+                        {
+                            try { WinApi.SetForegroundWindow(prev); } catch { }
+                        }
                     }
                 }
                 catch { }
-                try { p.Dispose(); } catch { }
                 lock (sessions)
                 {
                     Session s2;
@@ -666,7 +817,6 @@ namespace RinAccountManager
                         s2.LastAfk = DateTime.Now;
                     }
                 }
-                Log("Nhay chong-kick: " + a.Alias);
             }
             catch { }
         }
@@ -860,7 +1010,20 @@ namespace RinAccountManager
 
         private void BtnGame_Click(object sender, EventArgs e)
         {
-            GamesForm g = new GamesForm(txtPlaceId.Text, txtJobId.Text);
+            string ck = null;
+            for (int i = 0; i < accounts.Count; i++)
+            {
+                if (accounts[i].Live == "live" && !string.IsNullOrEmpty(accounts[i].Cookie))
+                {
+                    ck = accounts[i].Cookie;
+                    break;
+                }
+            }
+            if (ck == null && accounts.Count > 0)
+            {
+                ck = accounts[0].Cookie;
+            }
+            GamesForm g = new GamesForm(txtPlaceId.Text, txtJobId.Text, ck);
             if (g.ShowDialog(this) == DialogResult.OK && g.HasSelection && g.SelectedPlaceId > 0)
             {
                 txtPlaceId.Text = g.SelectedPlaceId.ToString();
@@ -1317,20 +1480,53 @@ namespace RinAccountManager
                 return;
             }
 
-            // VIP: link chua privateServerLinkCode= nam o o JobId (hoac PlaceId)
+            // VIP dang moi: link /share?code=..&type=Server (uu tien truoc dang cu)
+            string shareCode = null;
+            bool isShare = false;
+            // VIP dang cu: link chua privateServerLinkCode=
             string vipCode = null;
             bool isVip = false;
             if (!isFollow)
             {
-                vipCode = RobloxApi.ExtractVipCode(txtJobId.Text);
-                if (vipCode == null)
+                shareCode = RobloxApi.ExtractShareCode(txtJobId.Text);
+                if (shareCode == null)
                 {
-                    vipCode = RobloxApi.ExtractVipCode(txtPlaceId.Text);
+                    shareCode = RobloxApi.ExtractShareCode(txtPlaceId.Text);
                 }
-                isVip = vipCode != null;
-                if (isVip)
+                isShare = shareCode != null;
+                if (isShare)
                 {
-                    Log("Che do VIP server.");
+                    Log("Che do VIP (share link).");
+                }
+                else
+                {
+                    vipCode = RobloxApi.ExtractVipCode(txtJobId.Text);
+                    if (vipCode == null)
+                    {
+                        vipCode = RobloxApi.ExtractVipCode(txtPlaceId.Text);
+                    }
+                    isVip = vipCode != null;
+                    if (isVip)
+                    {
+                        Log("Che do VIP server.");
+                    }
+                    else if (placeId > 0 && RobloxApi.IsBareVipCode(txtJobId.Text))
+                    {
+                        // Ma VIP tran o o JobId + game o o PlaceId
+                        string bare = txtJobId.Text.Trim();
+                        if (System.Text.RegularExpressions.Regex.IsMatch(bare, "^[0-9a-fA-F]{32}$"))
+                        {
+                            shareCode = bare;
+                            isShare = true;
+                            Log("Che do VIP (ma share).");
+                        }
+                        else
+                        {
+                            vipCode = bare;
+                            isVip = true;
+                            Log("Che do VIP (ma roi).");
+                        }
+                    }
                 }
             }
 
@@ -1385,21 +1581,29 @@ namespace RinAccountManager
                 ss.PlaceId = placeId;
                 ss.JobId = jobId;
                 ss.VipCode = vipCode;
+                ss.ShareCode = shareCode;
                 ss.FollowId = isFollow ? followId : 0;
                 ss.Retries = 0;
                 ss.LastAfk = DateTime.Now;
+                ss.BornAt = DateTime.Now;
+                ss.Pid = 0;
             }
 
             for (int i = 0; i < liveList.Count; i++)
             {
                 Account a = liveList[i];
                 int idx = i;
-                string tag = isVip ? "VIP " : (isFollow ? "THEO @" + followName + " " : "");
+                string tag = isVip || isShare ? "VIP " : (isFollow ? "THEO @" + followName + " " : "");
                 string err;
                 if (isFollow)
                 {
                     long tf = followId;
                     err = await Task.Run(new Func<string>(delegate() { return Launcher.LaunchFollow(a, tf); }));
+                }
+                else if (isShare)
+                {
+                    string sc = shareCode;
+                    err = await Task.Run(new Func<string>(delegate() { return Launcher.LaunchVipShare(a, sc); }));
                 }
                 else if (isVip)
                 {
