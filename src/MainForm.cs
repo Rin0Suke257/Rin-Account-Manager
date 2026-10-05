@@ -46,6 +46,7 @@ namespace RinAccountManager
 
         private Dictionary<Account, Session> sessions = new Dictionary<Account, Session>();
         private DateTime lastRelogin = DateTime.MinValue;
+        private DateTime lastAfkSweep = DateTime.MinValue;
         private int wmiCounter = 0;
         private bool afkBusy = false;
         private bool reloginBusy = false;
@@ -490,6 +491,70 @@ namespace RinAccountManager
             catch { }
         }
 
+        // Gan pid ngay sau khi mo (snapshot truoc/sau) - chinh xac hon doan theo thu tu.
+        private async Task AttachSpawned(Account a, System.Collections.Generic.List<int> before)
+        {
+            await Task.Delay(3000);
+            try
+            {
+                System.Collections.Generic.List<int> now = LivePids();
+                System.Collections.Generic.List<int> fresh = new System.Collections.Generic.List<int>();
+                for (int i = 0; i < now.Count; i++)
+                {
+                    if (!before.Contains(now[i]))
+                    {
+                        bool taken = false;
+                        lock (sessions)
+                        {
+                            foreach (KeyValuePair<Account, Session> kv in sessions)
+                            {
+                                if (kv.Value.Pid == now[i])
+                                {
+                                    taken = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!taken)
+                        {
+                            fresh.Add(now[i]);
+                        }
+                    }
+                }
+                if (fresh.Count == 0)
+                {
+                    return;
+                }
+                int best = fresh[0];
+                DateTime bestT = DateTime.MaxValue;
+                for (int i = 0; i < fresh.Count; i++)
+                {
+                    try
+                    {
+                        System.Diagnostics.Process p = System.Diagnostics.Process.GetProcessById(fresh[i]);
+                        DateTime st = DateTime.MaxValue;
+                        try { st = p.StartTime; } catch { }
+                        try { p.Dispose(); } catch { }
+                        if (st < bestT)
+                        {
+                            bestT = st;
+                            best = fresh[i];
+                        }
+                    }
+                    catch { }
+                }
+                lock (sessions)
+                {
+                    Session ss;
+                    if (sessions.TryGetValue(a, out ss) && !PidAlive(ss.Pid))
+                    {
+                        ss.Pid = best;
+                    }
+                }
+            }
+            catch { }
+        }
+
         private void AdoptOrphans()
         {
             try
@@ -691,26 +756,24 @@ namespace RinAccountManager
             {
                 return;
             }
-            Account target = null;
-            lock (sessions)
-            {
-                foreach (KeyValuePair<Account, Session> kv in sessions)
-                {
-                    if (PidAlive(kv.Value.Pid) && (DateTime.Now - kv.Value.LastAfk).TotalMinutes >= AfkMinutes())
-                    {
-                        target = kv.Key;
-                        break;
-                    }
-                }
-            }
-            if (target == null)
+            if ((DateTime.Now - lastAfkSweep).TotalMinutes < AfkMinutes())
             {
                 return;
             }
             afkBusy = true;
             try
             {
-                await Task.Run(new Action(delegate() { JumpOnce(target); }));
+                // Quet toan bo cua so game, khong phu thuoc gán acc (tranh lech mapping).
+                List<int> wins = LivePids();
+                lastAfkSweep = DateTime.Now;
+                for (int i = 0; i < wins.Count; i++)
+                {
+                    await Task.Run(new Action(delegate() { JumpPid(wins[i]); }));
+                    if (i < wins.Count - 1)
+                    {
+                        await Task.Delay(5000);
+                    }
+                }
             }
             finally
             {
@@ -718,30 +781,29 @@ namespace RinAccountManager
             }
         }
 
-        private void JumpOnce(Account a)
+        private void JumpPid(int pid)
         {
-            Session ss;
-            lock (sessions)
-            {
-                if (!sessions.TryGetValue(a, out ss))
-                {
-                    return;
-                }
-            }
             try
             {
-                System.Diagnostics.Process p = System.Diagnostics.Process.GetProcessById(ss.Pid);
+                System.Diagnostics.Process p = System.Diagnostics.Process.GetProcessById(pid);
                 IntPtr hwnd = IntPtr.Zero;
                 try { hwnd = p.MainWindowHandle; } catch { }
+                try { p.Dispose(); } catch { }
                 if (hwnd == IntPtr.Zero)
                 {
-                    try { p.Dispose(); } catch { }
                     return;
                 }
-                try { p.Dispose(); } catch { }
+                JumpHwnd(hwnd);
+            }
+            catch { }
+        }
+
+        private void JumpHwnd(IntPtr hwnd)
+        {
+            try
+            {
                 IntPtr prev = WinApi.GetForegroundWindow();
                 try { WinApi.ShowWindow(hwnd, WinApi.SW_RESTORE); } catch { }
-                // Ep focus qua AttachThreadInput (qua mat chan focus-steal)
                 try
                 {
                     uint cur = WinApi.GetCurrentThreadId();
@@ -792,7 +854,6 @@ namespace RinAccountManager
                     }
                     else if (prev != IntPtr.Zero)
                     {
-                        // Ep tra focus (SetForeground thuong bi chan nguoc)
                         try
                         {
                             uint cur2 = WinApi.GetCurrentThreadId();
@@ -809,14 +870,6 @@ namespace RinAccountManager
                     }
                 }
                 catch { }
-                lock (sessions)
-                {
-                    Session s2;
-                    if (sessions.TryGetValue(a, out s2))
-                    {
-                        s2.LastAfk = DateTime.Now;
-                    }
-                }
             }
             catch { }
         }
@@ -1593,6 +1646,11 @@ namespace RinAccountManager
             {
                 Account a = liveList[i];
                 int idx = i;
+                System.Collections.Generic.List<int> beforePids = null;
+                if (settings.ReloginEnabled)
+                {
+                    beforePids = LivePids();
+                }
                 string tag = isVip || isShare ? "VIP " : (isFollow ? "THEO @" + followName + " " : "");
                 string err;
                 if (isFollow)
@@ -1625,6 +1683,10 @@ namespace RinAccountManager
                     else
                     {
                         NotifyJoin(a, placeId);
+                    }
+                    if (settings.ReloginEnabled && beforePids != null)
+                    {
+                        await AttachSpawned(a, beforePids);
                     }
                 }
                 else
