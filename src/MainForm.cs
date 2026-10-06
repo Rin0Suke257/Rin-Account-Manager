@@ -321,16 +321,49 @@ namespace RinAccountManager
             {
                 return;
             }
-            EditAccountForm f = new EditAccountForm(a.Alias, a.Note == null ? "" : a.Note, a.Username);
+            // Acc DIE: double-click = dang nhap lai (dien san user/pass).
+            if (a.Live == "die")
+            {
+                ReloginAccount(a);
+                return;
+            }
+            bool allowPw = settings.SavePasswords;
+            EditAccountForm f = new EditAccountForm(a.Alias, a.Note == null ? "" : a.Note, a.Username, allowPw, a.Password == null ? "" : a.Password);
             if (f.ShowDialog(this) == DialogResult.OK)
             {
                 a.Alias = f.AliasText;
                 a.Note = f.NoteText;
+                if (allowPw)
+                {
+                    a.Password = f.PasswordText;
+                }
                 SaveAccounts();
                 RefreshList();
                 Log("Da sua: " + a.Alias);
             }
             try { f.Dispose(); } catch { }
+        }
+
+        private void ReloginAccount(Account a)
+        {
+            string pw = "";
+            if (settings.SavePasswords && !string.IsNullOrEmpty(a.Password))
+            {
+                pw = a.Password;
+            }
+            BrowserLoginForm b = new BrowserLoginForm(a.Username, pw);
+            DialogResult dr = DialogResult.Cancel;
+            try
+            {
+                dr = b.ShowDialog(this);
+            }
+            catch { }
+            Account acc = b.Result;
+            try { b.Dispose(); } catch { }
+            if (dr == DialogResult.OK && acc != null)
+            {
+                AddAccountIfNew(acc);
+            }
         }
 
         private void SaveAccounts()
@@ -342,7 +375,7 @@ namespace RinAccountManager
             }
         }
 
-        // Chan add trung (so theo UserId). Tra ve true neu da them moi.
+        // Them moi, hoac cap nhat cookie neu acc da co (dang nhap lai khoi xoa).
         private bool AddAccountIfNew(Account acc)
         {
             if (acc != null && acc.UserId > 0)
@@ -351,10 +384,15 @@ namespace RinAccountManager
                 {
                     if (accounts[i].UserId == acc.UserId)
                     {
-                        Log("Acc " + acc.Username + " da co, bo qua.");
-                        MessageBox.Show("Acc " + acc.Username + " da co trong danh sach.",
+                        accounts[i].Cookie = acc.Cookie;
+                        accounts[i].Username = acc.Username;
+                        accounts[i].Live = "live";
+                        SaveAccounts();
+                        RefreshList();
+                        Log("Da cap nhat cookie: " + accounts[i].Alias);
+                        MessageBox.Show("Acc " + acc.Username + " da co, da cap nhat cookie moi (giu nguyen ten + ghi chu).",
                             "Rin", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        return false;
+                        return true;
                     }
                 }
             }

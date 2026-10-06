@@ -12,9 +12,13 @@ namespace RinAccountManager
 
         public string AliasText { get; private set; }
         public string NoteText { get; private set; }
+        public string PasswordText { get; private set; }
 
-        public EditAccountForm(string alias, string note, string username)
+        private TextBox txtPass;
+
+        public EditAccountForm(string alias, string note, string username, bool allowPassword, string password)
         {
+            PasswordText = password == null ? "" : password;
             this.Text = "Sua acc - Rin";
             this.Size = new Size(400, 300);
             this.MinimumSize = new Size(400, 300);
@@ -69,9 +73,36 @@ namespace RinAccountManager
             txtNote.Text = note;
             this.Controls.Add(txtNote);
 
+            int byy = 196;
+            if (allowPassword)
+            {
+                Label l3 = new Label();
+                l3.Text = "Mat khau (luu ma hoa, tuy chon):";
+                l3.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+                l3.ForeColor = RinTheme.Text;
+                l3.Location = new Point(14, 188);
+                l3.AutoSize = true;
+                this.Controls.Add(l3);
+
+                txtPass = new TextBox();
+                txtPass.Location = new Point(14, 208);
+                txtPass.Size = new Size(372, 24);
+                txtPass.BorderStyle = BorderStyle.FixedSingle;
+                txtPass.BackColor = Color.White;
+                txtPass.ForeColor = RinTheme.Text;
+                txtPass.Font = new Font("Segoe UI", 10f);
+                txtPass.UseSystemPasswordChar = true;
+                txtPass.Text = PasswordText;
+                this.Controls.Add(txtPass);
+                byy = 240;
+                this.Size = new Size(400, 344);
+                this.MinimumSize = new Size(400, 344);
+                this.MaximumSize = new Size(400, 344);
+            }
+
             RoundedButton btnOk = new RoundedButton();
             btnOk.Text = "Luu";
-            btnOk.Location = new Point(178, 196);
+            btnOk.Location = new Point(178, byy);
             btnOk.Size = new Size(100, 36);
             btnOk.CornerRadius = 12;
             btnOk.FillColor = RinTheme.Primary;
@@ -81,7 +112,7 @@ namespace RinAccountManager
 
             RoundedButton btnCancel = new RoundedButton();
             btnCancel.Text = "Huy";
-            btnCancel.Location = new Point(286, 196);
+            btnCancel.Location = new Point(286, byy);
             btnCancel.Size = new Size(100, 36);
             btnCancel.CornerRadius = 12;
             btnCancel.FillColor = RinTheme.PrimarySoft;
@@ -95,7 +126,7 @@ namespace RinAccountManager
             credit.Font = new Font("Segoe UI", 8f, FontStyle.Bold);
             credit.ForeColor = RinTheme.Primary;
             credit.BackColor = Color.Transparent;
-            credit.Location = new Point(228, 244);
+            credit.Location = new Point(228, byy + 48);
             credit.Size = new Size(158, 16);
             credit.TextAlign = ContentAlignment.MiddleRight;
             this.Controls.Add(credit);
@@ -112,6 +143,10 @@ namespace RinAccountManager
             }
             AliasText = txtAlias.Text.Trim();
             NoteText = txtNote.Text.Trim();
+            if (txtPass != null)
+            {
+                PasswordText = txtPass.Text;
+            }
             this.DialogResult = DialogResult.OK;
             this.Close();
         }

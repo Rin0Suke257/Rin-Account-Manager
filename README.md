@@ -67,6 +67,15 @@ CANH BAO: ai xin cookie / xin "rbx-player link" thi KHONG cho. Ho co the log vao
 
 ## Quan ly acc
 
+- Double-click acc DIE = dang nhap lai (ten dien san, pass tu dien neu co luu) — khong can xoa truoc, app tu cap nhat cookie, giu ten + note.
+- Double-click acc LIVE = sua ten + note (+ pass neu bat luu mat khau).
+
+## Luu mat khau (tat mac dinh, tu chiu)
+
+- Bat trong Settings: moi acc co them o pass (ma hoa DPAPI theo may nhu cookie).
+- Double-click acc DIE thi user + pass tu dien, ban chi bam captcha + login.
+- Ai mo duoc may nay thi mo duoc pass — bat la tu chiu.
+
 - Cot `TT`: `ok` = live, `die` = cookie chet (them lai), `?` = chua check. Bam `Check live` se cap nhat + popup tong ket.
 - Cot `Note`: double-click vao acc de sua ten goi nho + ghi chu (vd: farm map nao).
 - Bam `Play`: app tu loc acc DIE truoc (bao ro ly do), chi play acc LIVE, xong mo popup ket qua tung acc. Loi launch nao cung hien day du, khong con fail tham.

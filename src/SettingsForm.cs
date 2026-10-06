@@ -17,6 +17,7 @@ namespace RinAccountManager
         private TextBox txtReloginMax;
         private TextBox txtReloginGap;
         private CheckBox chkAlias;
+        private CheckBox chkSavePw;
         private CheckBox chkRelogin;
         private CheckBox chkAfk;
         private TextBox txtAfkMin;
@@ -25,9 +26,9 @@ namespace RinAccountManager
         public SettingsForm()
         {
             this.Text = "Cai dat - Rin";
-            this.Size = new Size(480, 660);
-            this.MinimumSize = new Size(480, 660);
-            this.MaximumSize = new Size(480, 660);
+            this.Size = new Size(480, 700);
+            this.MinimumSize = new Size(480, 700);
+            this.MaximumSize = new Size(480, 700);
             this.StartPosition = FormStartPosition.CenterParent;
             this.FormBorderStyle = FormBorderStyle.None;
             this.BackColor = RinTheme.Bg;
@@ -79,7 +80,17 @@ namespace RinAccountManager
             chkEvDie = AddCheck("Cookie die", 250, y, s.EvDie);
             y += 26;
             chkAlias = AddCheck("Hien Alias thay username", 14, y, s.UseAlias);
-            y += 30;
+            y += 26;
+            chkSavePw = AddCheck("Luu mat khau (tat mac dinh)", 14, y, s.SavePasswords);
+            y += 22;
+            Label pwWarn = new Label();
+            pwWarn.Text = "Bat len thi tu chiu: ai mo duoc may nay thi mo duoc pass.";
+            pwWarn.Font = new Font("Segoe UI", 8f, FontStyle.Italic);
+            pwWarn.ForeColor = RinTheme.Muted;
+            pwWarn.Location = new Point(14, y);
+            pwWarn.Size = new Size(452, 16);
+            this.Controls.Add(pwWarn);
+            y += 22;
 
             AddHead("Anh chup khi vao game", y);
             y += 22;
@@ -255,6 +266,7 @@ namespace RinAccountManager
             s.ReloginMax = Num(txtReloginMax, 5, 1, 20);
             s.ReloginGapSec = Num(txtReloginGap, 15, 5, 300);
             s.UseAlias = chkAlias.Checked;
+            s.SavePasswords = chkSavePw.Checked;
             s.ReloginEnabled = chkRelogin.Checked;
             s.AfkEnabled = chkAfk.Checked;
             s.AfkMinutes = Num(txtAfkMin, 15, 1, 19);

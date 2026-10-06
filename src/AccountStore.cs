@@ -17,6 +17,7 @@ namespace RinAccountManager
         public string BrowserTrackerId { get; set; }
         public string Note { get; set; }
         public string Live { get; set; }
+        public string Password { get; set; }
 
         public Account()
         {
@@ -27,6 +28,7 @@ namespace RinAccountManager
             BrowserTrackerId = new Random().Next(100000, 175000).ToString() + new Random().Next(100000, 900000).ToString();
             Note = "";
             Live = "";
+            Password = "";
         }
     }
 

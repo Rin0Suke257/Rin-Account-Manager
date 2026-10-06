@@ -21,6 +21,7 @@ namespace RinAccountManager
         public bool ReloginEnabled { get; set; }
         public bool AfkEnabled { get; set; }
         public int AfkMinutes { get; set; }
+        public bool SavePasswords { get; set; }
 
         public AppSettings()
         {
@@ -37,6 +38,7 @@ namespace RinAccountManager
             ReloginEnabled = false;
             AfkEnabled = false;
             AfkMinutes = 15;
+            SavePasswords = false;
         }
     }
 

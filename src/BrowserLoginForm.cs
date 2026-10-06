@@ -17,12 +17,21 @@ namespace RinAccountManager
         private bool checking = false;
         private bool done = false;
         private string userDataDir;
+        private string prefillUser;
+        private string prefillPass;
+        private int prefillTries = 0;
 
         public Account Result { get; private set; }
         public bool OtherMethod { get; private set; }
 
-        public BrowserLoginForm()
+        public BrowserLoginForm() : this(null, null)
         {
+        }
+
+        public BrowserLoginForm(string username, string password)
+        {
+            prefillUser = username == null ? "" : username;
+            prefillPass = password == null ? "" : password;
             this.Text = "Dang nhap Roblox - Rin";
             this.Size = new Size(480, 680);
             this.MinimumSize = new Size(480, 680);
@@ -144,7 +153,51 @@ namespace RinAccountManager
                 SetInfo("Khong tai duoc trang login (mang nay co the chan roblox.com). Hay dung Quick Login hoac cookie.");
                 return;
             }
+            TryPrefill();
             await CheckLogin();
+        }
+
+        // Dien san user/pass (dang nhap lai): tim o theo loai input, tuong thich React.
+        private async void TryPrefill()
+        {
+            try
+            {
+                if (web == null || web.CoreWebView2 == null)
+                {
+                    return;
+                }
+                if (prefillUser == "" && prefillPass == "")
+                {
+                    return;
+                }
+                if (prefillTries >= 6)
+                {
+                    return;
+                }
+                prefillTries++;
+                string js = "(function(){"
+                    + "function setEl(el,v){try{var d=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value');d.set.call(el,v);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return true;}catch(e){try{el.value=v;return true;}catch(e2){return false;}}}"
+                    + "var u=document.querySelector('#login-username')||document.querySelector('input[name=\"username\"]')||document.querySelector('input[autocomplete=\"username\"]');"
+                    + "var p=document.querySelector('#login-password')||document.querySelector('input[type=\"password\"]');"
+                    + "var r='';"
+                    + "if(u&&'" + prefillUser.Replace("\\", "\\\\").Replace("'", "\\'") + "'!==''){if(setEl(u,'" + prefillUser.Replace("\\", "\\\\").Replace("'", "\\'") + "'))r+='u';}"
+                    + "if(p&&'" + prefillPass.Replace("\\", "\\\\").Replace("'", "\\'") + "'!==''){if(setEl(p,'" + prefillPass.Replace("\\", "\\\\").Replace("'", "\\'") + "'))r+='p';}"
+                    + "return r;})()";
+                string res = await web.CoreWebView2.ExecuteScriptAsync(js);
+                if ((res == null || res.IndexOf("u") < 0) && prefillTries < 6)
+                {
+                    // React chua render xong -> thu lai sau 2s
+                    Timer retry = new Timer();
+                    retry.Interval = 2000;
+                    retry.Tick += delegate(object s, EventArgs ev)
+                    {
+                        try { retry.Stop(); retry.Dispose(); } catch { }
+                        TryPrefill();
+                    };
+                    retry.Start();
+                }
+            }
+            catch { }
         }
 
         private void SetInfo(string s)
