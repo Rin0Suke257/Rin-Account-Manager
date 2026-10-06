@@ -952,12 +952,14 @@ namespace RinAccountManager
             CheckExeSilent();
             if (MultiRoblox.IsEnabled)
             {
+                Task.Run(new Action(AutoRefreshCookies));
                 return;
             }
             string err;
             if (MultiRoblox.TryEnable(out err))
             {
                 Log("Multi-Roblox: BAT san.");
+                Task.Run(new Action(AutoRefreshCookies));
                 return;
             }
             Log("Chua bat duoc Multi: " + err);
@@ -968,6 +970,61 @@ namespace RinAccountManager
                 try { chkMulti.Checked = false; } catch { }
                 suppressChk = false;
             }
+            else
+            {
+                Task.Run(new Action(AutoRefreshCookies));
+            }
+        }
+
+        // Tu gia han cookie con live luc mo app (docs: POST v2/session/refresh).
+        // Chi chong het han, khong cuu cookie da die, khong chong thu hoi do doi IP.
+        private void AutoRefreshCookies()
+        {
+            try
+            {
+                int ok = 0;
+                int fail = 0;
+                for (int i = 0; i < accounts.Count; i++)
+                {
+                    Account a = accounts[i];
+                    RobloxUser u = RobloxApi.GetAuthenticatedUser(a.Cookie);
+                    if (!u.Ok)
+                    {
+                        continue;
+                    }
+                    string nc;
+                    string er;
+                    if (RobloxApi.TryRefreshCookie(a.Cookie, out nc, out er))
+                    {
+                        a.Cookie = RobloxApi.ExtractCookie(nc);
+                        a.Live = "live";
+                        ok++;
+                    }
+                    else
+                    {
+                        fail++;
+                    }
+                    System.Threading.Thread.Sleep(1500);
+                }
+                if (ok + fail > 0)
+                {
+                    SaveAccounts();
+                    try
+                    {
+                        if (this.InvokeRequired)
+                        {
+                            this.Invoke(new Action(RefreshList));
+                        }
+                        else
+                        {
+                            RefreshList();
+                        }
+                    }
+                    catch { }
+                    Log("Gia han cookie: " + ok.ToString() + " ok, " + fail.ToString() + " loi.");
+                }
+            }
+            catch { }
         }
 
         private bool AskAndFixMulti()

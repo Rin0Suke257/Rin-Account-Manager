@@ -377,6 +377,71 @@ namespace RinAccountManager
             }
         }
 
+        public static bool TryRefreshCookie(string cookie, out string newCookie, out string error)
+        {
+            newCookie = null;
+            error = null;
+            string csrf;
+            string csrfErr;
+            if (!TryGetCsrfToken(cookie, out csrf, out csrfErr))
+            {
+                error = csrfErr;
+                return false;
+            }
+            try
+            {
+                HttpWebRequest req = Create("https://auth.roblox.com/v2/session/refresh", cookie);
+                req.Method = "POST";
+                req.ContentType = "application/json";
+                req.ContentLength = 0;
+                req.Headers["X-CSRF-TOKEN"] = csrf;
+                req.Referer = RefererGame;
+                using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+                {
+                    string[] sc = null;
+                    try { sc = resp.Headers.GetValues("Set-Cookie"); } catch { }
+                    if (sc != null)
+                    {
+                        for (int i = 0; i < sc.Length; i++)
+                        {
+                            if (sc[i] != null && sc[i].StartsWith(".ROBLOSECURITY="))
+                            {
+                                string v = sc[i].Substring(".ROBLOSECURITY=".Length);
+                                int semi = v.IndexOf(';');
+                                if (semi >= 0)
+                                {
+                                    v = v.Substring(0, semi);
+                                }
+                                newCookie = v.Trim();
+                                return true;
+                            }
+                        }
+                    }
+                    error = "Khong thay cookie moi.";
+                    return false;
+                }
+            }
+            catch (WebException wex)
+            {
+                HttpWebResponse r = wex.Response as HttpWebResponse;
+                if (r != null)
+                {
+                    error = "HTTP " + ((int)r.StatusCode).ToString();
+                    try { r.Close(); } catch { }
+                }
+                else
+                {
+                    error = "Mang loi: " + wex.Message;
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
         public static RobloxUser GetAuthenticatedUser(string cookie)
         {
             RobloxUser u = new RobloxUser();
